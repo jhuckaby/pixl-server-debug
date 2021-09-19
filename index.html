@@ -1,0 +1,469 @@
+<!DOCTYPE HTML>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<title>...</title>
+		<link rel="stylesheet" href="/internal/debug/style.css">
+		<script src="/internal/debug/sha256.js"></script>
+		<script>
+			var $ = function(query) { return document.querySelector(query); };
+			var $$ = function(query) { return Array.from(document.querySelectorAll(query)); };
+			
+			var app = {
+				
+				receiveConfig(config) {
+					this.config = config;
+				},
+				
+				run: function() {
+					$('#d_header_title').innerHTML = '🔬 ' + this.config.title + ' Debugger';
+					document.title = '🔬 ' + this.config.title + ' Debugger';
+					
+					$('#fe_secret').focus();
+					$('#fe_secret').addEventListener('keypress', function(event) {
+						if (event.keyCode == '13') { // enter key
+							event.preventDefault();
+							app.doLogin();
+						}
+					} );
+					$('#fe_secret').value = localStorage.secret_key || '';
+					if (localStorage.secret_key) $('#fe_remember').checked = true;
+					
+					// connect log level range and text
+					$('#fe_level_range').addEventListener('change', function() {
+						$('#fe_level_text').value = this.value;
+						app.changeLogLevel( parseInt(this.value) );
+					});
+					$('#fe_level_text').addEventListener('change', function() {
+						$('#fe_level_range').value = this.value;
+						app.changeLogLevel( parseInt(this.value) );
+					});
+					$('#fe_log').addEventListener('change', function() {
+						app.changeLogEnabled( this.checked );
+					});
+					$('#fe_match').addEventListener('change', function() {
+						try {
+							new RegExp( this.value || '.+' );
+						}
+						catch (err) {
+							return app.doError("Invalid Regular Expression: " + err);
+						}
+						app.changeLogMatch( this.value );
+					});
+					
+					if (!navigator.userAgent.match(/Chrome/)) {
+						app.doError("Please use Google Chrome for this tool.");
+					}
+					
+					setInterval( function() {
+						if (app.nonce && app.secret) app.authGet( 'ping', {}, function() {} );
+					}, 1000 * 60 );
+				},
+				
+				doLogin: function() {
+					var self = this;
+					this.secret = $('#fe_secret').value;
+					if (!this.secret) return this.doError("Please enter your application's secret key.");
+					
+					if ($('#fe_remember').checked) localStorage.secret_key = this.secret;
+					else delete localStorage.secret_key;
+					
+					this.apiGet( 'challenge', {}, function(resp) {
+						self.nonce = resp.nonce;
+						
+						// self.authGet( 'start', { pool: POOL, pid: PID }, function(resp) {
+						// 	self.doStart(resp);
+						// } ); // start
+						
+						self.authGet( 'list', {}, function(resp) {
+							self.doList(resp);
+						} ); // start
+					} ); // challenge
+				},
+				
+				doList: function(resp) {
+					// show list of processes
+					// resp.procs
+					if (!resp.procs || !resp.procs.length) {
+						app.doError("No processes available for debugging.");
+						return;
+					}
+					this.procs = resp.procs;
+					
+					$('#page_Login').style.display = 'none';
+					$('#page_Home').style.display = 'none';
+					$('#page_List').style.display = 'block';
+					
+					$('#tab_Login').style.display = 'none';
+					$('#tab_List').style.display = 'block';
+					$('#tab_Home').style.display = 'none';
+					$('#tab_List').className = 'tab active';
+					$('#tab_Home').className = 'tab inactive';
+					
+					var html = '';
+					html += '<table class="data_table">';
+					html += '<tr><th>Process</th><th>PID</th><th>Memory</th><th>CPU</th><th>Actions</th></tr>';
+					
+					resp.procs.forEach( function(proc, idx) {
+						html += '<tr>';
+						html += '<td class="td_big"><span class="link" onMouseUp="app.doStartProc(' + idx + ')">🟢<b>' + proc.title + '</b></span></td>';
+						html += '<td>' + proc.pid + '</td>';
+						html += '<td>' + proc.memText + '</td>';
+						html += '<td>' + proc.cpuText + '</td>';
+						html += '<td><span class="link" onMouseUp="app.doStartProc(' + idx + ')"><b>Debug</b></span></td>';
+						html += '</tr>';
+					} );
+					
+					html += '</table>';
+					$('#d_proc_table').innerHTML = html;
+				},
+				
+				doRefreshList: function() {
+					// refresh list of processes
+					var self = this;
+					
+					this.authGet( 'list', {}, function(resp) {
+						self.doList(resp);
+					} ); // start
+				},
+				
+				doStartProc: function(idx) {
+					// select process from list
+					var self = this;
+					var proc = this.procs[idx];
+					
+					self.authGet( 'start', { pid: proc.pid, pool: proc.pool || '' }, function(resp) {
+						self.doStart(resp);
+					} ); // start
+				},
+				
+				doStart: function(resp) {
+					// start debugging
+					var devtools_url = resp.url;
+					var pid = resp.pid;
+					var echo = resp.echo;
+					var debug_level = resp.debugLevel;
+					
+					this.proc = resp;
+					
+					$('#page_Login').style.display = 'none';
+					$('#page_List').style.display = 'none';
+					$('#page_Home').style.display = 'block';
+					
+					$('#tab_Login').style.display = 'none';
+					$('#tab_Home').style.display = 'block';
+					$('#tab_Home').className = 'tab active';
+					$('#tab_List').className = 'tab inactive';
+					
+					$('#pre_url').innerHTML = devtools_url;
+					$('#s_pid').innerHTML = pid;
+					$('#fe_log').checked = echo;
+					$('#fe_level_range').value = $('#fe_level_text').value = debug_level;
+				},
+				
+				switchToDebugTab: function() {
+					// switch back to debug tab from list tab
+					$('#tab_Home').className = 'tab active';
+					$('#tab_List').className = 'tab inactive';
+				},
+				
+				changeLogEnabled: function(enabled) {
+					// set log mirror enabled flag
+					this.authGet( 'logs', { 
+						pool: this.proc.pool || '',
+						pid: this.proc.pid,
+						echo: enabled ? 1 : 0 
+					} );
+				},
+				
+				changeLogLevel: function(level) {
+					// set the log level (pixl-server logger)
+					this.authGet( 'logs', { 
+						pool: this.proc.pool || '',
+						pid: this.proc.pid,
+						level: level 
+					} );
+				},
+				
+				changeLogMatch: function(match) {
+					// set the log echo match regex (pixl-server logger)
+					this.authGet( 'logs', { 
+						pool: this.proc.pool || '',
+						pid: this.proc.pid,
+						match: match 
+					} );
+				},
+				
+				doStop: function() {
+					// close debugger and return to list screen
+					// restore original log level!
+					var self = this;
+					
+					this.authGet( 'stop', { 
+						pool: this.proc.pool || '',
+						pid: this.proc.pid
+					}, 
+					function(resp) {
+						self.doRefreshList();
+						self.showMessage('success', "The debugger was closed successfully.");
+					} ); // start
+				},
+				
+				doLogout: function() {
+					// return to login screen
+					$('#page_Login').style.display = 'block';
+					$('#page_List').style.display = 'none';
+					$('#page_Home').style.display = 'none';
+					
+					$('#tab_Login').style.display = 'block';
+					$('#tab_Home').style.display = 'none';
+					$('#tab_List').style.display = 'none';
+					
+					if (!localStorage.secret_key) $('#fe_secret').value = '';
+					$('#fe_secret').focus();
+					
+					delete this.nonce;
+					delete this.secret;
+					
+					this.showMessage('success', "Logged out successfully.");
+				},
+				
+				authGet: function(cmd, query, callback) {
+					// authenticated command send (wraps apiGet)
+					// retry for expired nonce
+					var self = this;
+					query.nonce = this.nonce;
+					query.auth = sha256( this.nonce + this.secret );
+					
+					this.apiGet( cmd, query, function(resp) {
+						if ((resp.code == 'refresh') && resp.nonce) {
+							// nonce expired, refresh and try again
+							self.nonce = resp.nonce;
+							return self.authGet(cmd, query, callback);
+						}
+						if (callback) callback(resp);
+					} );
+				},
+				
+				apiGet: function(cmd, query, callback) {
+					// fetch data from server via HTTP GET
+					var uri = '/internal/debug/api/' + cmd + composeQueryString(query || {});
+					fetch(uri)
+						.then( function(res) {
+							if (!res.ok) throw new Error("HTTP " + res.status + " " + res.statusText);
+							return res.json();
+						} )
+						.then(function(json) {
+							if (json.code && (typeof(json.code) == 'number')) {
+								throw new Error("Debug API Error: " + json.description);
+							}
+							// break out of promise try/catch control
+							setTimeout( function() { callback(json); }, 1 );
+						} )
+						.catch( function(err) {
+							// API error, probably ACL
+							if (err.message && err.message.match(/EvalError/)) return app.apiGet(cmd, query, callback);
+							app.doError(err);
+						} );
+				},
+				
+				doError: function(msg, lifetime) {
+					// show an error message at the top of the screen
+					// and hide the progress dialog if applicable
+					this.showMessage( 'error', msg, lifetime );
+					return null;
+				},
+				
+				clearError: function() {
+					// clear last error
+					app.hideMessage();
+				},
+				
+				showMessage: function(type, msg, lifetime) {
+					// show success, warning or error message
+					// Dialog.hide();
+					
+					$('#d_message_inner').innerHTML = '' + msg;
+					$('#d_message').className = 'message ' + type;
+					$('#d_message').style.display = 'block';
+					
+					if (this.messageTimer) clearTimeout( this.messageTimer );
+					if ((type == 'success') || lifetime) {
+						if (!lifetime) lifetime = 8;
+						this.messageTimer = setTimeout( function() { app.hideMessage(); }, lifetime * 1000 );
+					}
+				},
+				
+				hideMessage: function(animate) {
+					$('#d_message').style.display = 'none';
+				}
+				
+			}; // app
+			
+			function composeQueryString(query) {
+				// compose key/value pairs into query string
+				var qs = '';
+				for (var key in query) {
+					qs += (qs.length ? '&' : '?') + key + '=' + encodeURIComponent(query[key]);
+				}
+				return qs;
+			};
+			
+			function copyToClipboard(e){var o=document.createElement("span");o.textContent=e,o.style.whiteSpace="pre",document.body.appendChild(o);var n=window.getSelection(),t=window.document.createRange();n.removeAllRanges(),t.selectNode(o),n.addRange(t);try{window.document.execCommand("copy")}catch(e){;}n.removeAllRanges(),window.document.body.removeChild(o)};
+			
+		</script>
+		<script src="/internal/debug/api/config?callback=app.receiveConfig"></script>
+	</head>
+	<body>
+		<div id="d_message" class="message" style="display:none" onMouseUp="app.hideMessage(250)">
+			<div id="d_message_inner" class="message_inner"></div>
+		</div>
+		
+		<!-- Logo and title -->
+		<div id="d_header">
+			<div class="container">
+				<!-- <div id="d_header_logo" class="left"></div> -->
+				<div id="d_header_title" class="left"></div>
+				<div id="d_header_user_container" class="right">
+					
+				</div>
+				<div class="clear"></div>
+			</div>
+		</div>
+		
+		<!-- Main page container -->
+		<div class="container">
+			
+			<!-- Main Content Area -->
+			<div class="tab_bar">
+				<div id="tab_Login" class="tab active"><span class="content">Login</span></div>
+				<div id="tab_List" class="tab inactive" style="display:none" onMouseUp="app.doStop()"><span class="content">Process List</span></div>
+				<div id="tab_Home" class="tab inactive" style="display:none"><span class="content">Debugger</span></div>
+				<div class="clear"></div>
+			</div>
+			
+			<!-- Actual page contents here -->
+			<div id="main" class="main">
+				<div id="page_Login">
+					<div class="inline_dialog_container" style="margin-top:75px; margin-bottom:75px;">
+						<div class="dialog_title shade-light">Developer Login</div>
+						<div class="dialog_content">
+							<form style="margin:0; padding:0;">
+							<center><table style="margin:0px;">
+								<tr>
+									<td align="right" class="table_label">Secret Key:</td>
+									<td align="left" class="table_value"><div><input type="password" id="fe_secret" spellcheck="false" value="" style="width:97%"/></div></td>
+								</tr>
+								<tr>
+									<td>&nbsp;</td>
+									<td class="caption">Your secret key will not be sent over the wire.  It will only be used client-side to compute a cryptographic token using a challenge/response API.</td>
+								</tr>
+								<tr><td colspan="2"><div class="table_spacer"></div></td></tr>
+								<tr>
+									<td align="right" class="table_label">Options:</td>
+									<td align="left" class="table_value"><div><input type="checkbox" id="fe_remember" value="1"/><label for="fe_remember">Remember Secret Key</label></div></td>
+								</tr>
+								<tr>
+									<td>&nbsp;</td>
+									<td class="caption">Check this box to save the secret key on this machine &amp; browser for this specific hostname.</td>
+								</tr>
+							</table></center>
+							</form>
+						</div>
+						
+						<div class="dialog_buttons"><center><table><tr>
+							<td><div class="button" style="width:120px;" onMouseUp="app.doLogin()">Authenticate</div></td>
+						</tr></table></center></div>
+					</div>
+				</div>
+				<div id="page_List" style="display:none">
+					<div class="inline_dialog_container" style="width:600px; margin-top:75px; margin-bottom:75px;">
+						<div class="dialog_title shade-light">Select Process to Debug</div>
+						<div class="dialog_content" id="d_proc_table">
+							
+						</div>
+						
+						<div class="dialog_buttons"><center><table><tr>
+							<td><div class="button" style="width:120px;" onMouseUp="app.doLogout()">Logout</div></td>
+							<td width="50">&nbsp;</td>
+							<td><div class="button" style="width:120px;" onMouseUp="app.doRefreshList()">Refresh</div></td>
+						</tr></table></center></div>
+					</div>
+				</div>
+				<div id="page_Home" style="display:none">
+					<div style="float:left; width:50%">
+						<div class="inline_dialog_container" style="margin-top:75px; margin-bottom:75px;">
+							<div class="dialog_title shade-light">Debugger Started for PID <span id="s_pid"></span></div>
+							<div class="dialog_content">
+								<!-- <h1>Debugger running for Process ID </h1> -->
+								
+								<h2>Step 1: Make sure the Dev Tools have been opened at least once.</h2>
+								<p>Chrome does not accept <code>devtools://</code> URLs until the tools have been opened manually at least once.  You can right-click on any element on this page and select "Inspect", or type <code>Opt+Cmd+I</code>.  This was <a href="https://bugs.chromium.org/p/chromium/issues/detail?id=900945" target="_blank">reported as a bug</a> back in 2018.</p>
+								
+								<h2>Step 2: Navigate to this URL in a new tab:</h2>
+								<pre style="margin-left:30px; padding-top:5px; padding-bottom:10px;" id="pre_url"></pre>
+								<p style="margin-left:45px;"><input type="button" value="⬆️ Copy to Clipboard" onClick="copyToClipboard($('#pre_url').innerText);"></p>
+								
+								<h2>Step 3: Switch to the Node.js context.</h2>
+								<p>Locate the menu in the top-left corner which says "<b>VM Context 1</b>" and switch it to "<b>/usr/bin/node[...]</b>", if applicable.  This step may not be necessary.</p>
+							</div>
+							
+							<div class="dialog_buttons"><center><table><tr>
+								<td><div class="button" style="width:120px;" onMouseUp="app.doStop()">Close Debugger</div></td>
+							</tr></table></center></div>
+						</div>
+					</div>
+					<div style="float:left; width:50%">
+						<div class="inline_dialog_container" style="margin-top:75px; margin-bottom:75px;">
+							<div class="dialog_title shade-light">Log Controls</div>
+							<div class="dialog_content">
+								<center><table style="margin:0px;">
+									<tr>
+										<td align="right" class="table_label">Log Echo:</td>
+										<td align="left" class="table_value"><div><input type="checkbox" id="fe_log" value="1"/><label for="fe_log">Enable Log Mirroring</label></div></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td class="caption">This will echo all your server logs (from pixl-server's logger) to the debugger in real-time.</td>
+									</tr>
+									<tr><td colspan="2"><div class="table_spacer"></div></td></tr>
+									<tr>
+										<td align="right" class="table_label">Log Level:</td>
+										<td align="left" class="table_value"><div><input type="range" id="fe_level_range" value="1" min="1" max="10" step="1"/><input type="number" size="2" value="1" min="1" max="10" id="fe_level_text"/></div></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td class="caption">Adjust your server's debug log level here.</td>
+									</tr>
+									<tr><td colspan="2"><div class="table_spacer"></div></td></tr>
+									<tr>
+										<td align="right" class="table_label">Log Match:</td>
+										<td align="left" class="table_value"><div><input type="text" id="fe_match" value="" placeholder=".+" style="width:200px"/></div></td>
+									</tr>
+									<tr>
+										<td>&nbsp;</td>
+										<td class="caption">Optionally filter your logs with a regular expression.</td>
+									</tr>
+								</table></center>
+							</div>
+							<div class="dialog_buttons" style="border-top:none; height:1px;"></div>
+						</div>
+					</div>
+				</div>
+			</div>
+			
+			<!-- Footer -->
+			<div id="d_footer">
+				<div class="left">
+					Debugger Launcher &copy; 2021 PixlCore.com. Released under the MIT License.
+				</div>
+				<div id="d_footer_version" class="right">
+					
+				</div>
+				<div class="clear"></div>
+			</div>
+			
+		</div>
+	</body>
+	<script> app.run(); </script>
+</html>

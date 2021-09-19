@@ -1,0 +1,27 @@
+{
+	"name": "pixl-server-debug",
+	"version": "1.0.0",
+	"description": "An easy way to debug your pixl-server app using Chrome Dev Tools.",
+	"author": "Joseph Huckaby <jhuckaby@gmail.com>",
+	"homepage": "https://github.com/jhuckaby/pixl-server-debug",
+	"license": "MIT",
+	"main": "debug.js",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/jhuckaby/pixl-server-debug"
+	},
+	"bugs": {
+		"url": "https://github.com/jhuckaby/pixl-server-debug/issues"
+	},
+	"keywords": [
+		"debug",
+		"chrome",
+		"devtools"
+	],
+	"dependencies": {
+		"class-plus": "^1.0.0",
+		"pixl-tools": "^1.0.0",
+		"js-sha256": "0.9.0"
+	},
+	"devDependencies": {}
+}
