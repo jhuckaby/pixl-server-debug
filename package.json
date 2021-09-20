@@ -1,6 +1,6 @@
 {
 	"name": "pixl-server-debug",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "An easy way to debug your pixl-server app using Chrome Dev Tools.",
 	"author": "Joseph Huckaby <jhuckaby@gmail.com>",
 	"homepage": "https://github.com/jhuckaby/pixl-server-debug",

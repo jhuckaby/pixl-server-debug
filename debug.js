@@ -48,6 +48,16 @@ class Debug extends Component {
 		this.shaMatch = new RegExp( '^' + this.config.get('base_uri') + '/sha256.js$' );
 		this.apiMatch = new RegExp('^' + this.config.get('base_uri') + "/api/(\\w+)");
 		
+		// try to find sha256.min.js
+		this.shaFile = Path.resolve('./node_modules/js-sha256/build/sha256.min.js');
+		if (!fs.existsSync(this.shaFile)) {
+			this.shaFile = Path.resolve(__dirname + '/node_modules/js-sha256/build/sha256.min.js');
+			
+			if (!fs.existsSync(this.shaFile)) {
+				return new Error("Cannot locate sha256.min.js!");
+			}
+		}
+		
 		// copy refs to global on inspector start
 		this.globals = {
 			server: this.server
@@ -80,7 +90,7 @@ class Debug extends Component {
 			callback(false);
 		}
 		else if (url.match(this.shaMatch)) {
-			args.internalFile = Path.resolve(__dirname + '/node_modules/js-sha256/build/sha256.min.js');
+			args.internalFile = this.shaFile;
 			callback(false);
 		}
 		else if (url.match(this.apiMatch)) {
