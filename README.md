@@ -85,26 +85,26 @@ The fifth and final layer of protection is automatic shutdown on inactivity.  If
 
 Use [npm](https://www.npmjs.com/) to install the module and its dependencies.
 
-```
+```sh
 npm install pixl-server pixl-server-web pixl-server-debug
 ```
 
 Here is a simple usage example.  Note that the component's official name is `Debug`, so that is what you should use for the configuration key, and for gaining access to the component via your server object, should you need it.
 
 ```javascript
-var PixlServer = require('pixl-server');
-var server = new PixlServer({
+const PixlServer = require('pixl-server');
+let server = new PixlServer({
 	
 	__name: 'MyServer',
 	__version: "1.0",
 	
 	config: {
-		"log_dir": "/var/log",
+		"log_dir": "/let/log",
 		"debug_level": 9,
 		
 		"WebServer": {
 			"http_port": 80,
-			"http_htdocs_dir": "/var/www/html"
+			"http_htdocs_dir": "/let/www/html"
 		},
 		
 		"Debug": {
@@ -163,7 +163,7 @@ exports.startup = function(worker, callback) {
 	this.worker = worker;
 	
 	// setup our own logger
-	var columns = ['hires_epoch', 'date', 'hostname', 'pid', 'component', 'category', 'code', 'msg', 'data'];
+	let columns = ['hires_epoch', 'date', 'hostname', 'pid', 'component', 'category', 'code', 'msg', 'data'];
 	this.logger = new Logger( 'logs/worker.log', columns );
 	
 	// attach logger to worker
